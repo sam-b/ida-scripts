@@ -13,7 +13,7 @@ def pseudocolor(val, minval, maxval):
 	return int("%02X%02X%02X" % (int(round(r*200)), int(round(b*200)), int(round(g*200))),16)
 
 start_time = time.time()
-#Taken from https://msdn.microsoft.com/en-us/library/bb288454.aspx + standard interesting-ness
+#Taken from https://msdn.microsoft.com/en-us/library/bb288454.aspx
 interesting_funcs = ['_memset','_free','_strcpy', '_strcpyA', '_strcpyW', '_wcscpy', '_tcscpy', '_mbscpy', '_StrCpy', '_StrCpyA', '_StrCpyW', '_lstrcpy', '_lstrcpyA', '_lstrcpyW', '_tccpy', '_mbccpy', '_ftcscpy', '_strncpy', '_wcsncpy', '_tcsncpy', '_mbsncpy', '_mbsnbcpy', '_StrCpyN', '_StrCpyNA', '_StrCpyNW', '_StrNCpy', '_strcpynA', '_StrNCpyA', '_StrNCpyW', '_lstrcpyn', '_lstrcpynA', '_lstrcpynW,strcat', '_strcatA', '_strcatW', '_wcscat', '_tcscat', '_mbscat', '_StrCat', '_StrCatA', '_StrCatW', '_lstrcat', '_lstrcatA', '_lstrcatW', '_StrCatBuff', '_StrCatBuffA', '_StrCatBuffW', '_StrCatChainW', '_tccat', '_mbccat', '_ftcscat', '_strncat', '_wcsncat', '_tcsncat', '_mbsncat', '_mbsnbcat', '_StrCatN', '_StrCatNA', '_StrCatNW', '_StrNCat', '_StrNCatA', '_StrNCatW', '_lstrncat', '_lstrcatnA', '_lstrcatnW', '_lstrcatn,sprintfW', '_sprintfA', '_wsprintf', '_wsprintfW', '_wsprintfA', '_sprintf', '_swprintf', '_stprintf', '_wvsprintf', '_wvsprintfA', '_wvsprintfW','_vsprintf', '_vstprintf', '_vswprintf', '_wnsprintf', '_wnsprintfA', '_wnsprintfW','_snwprintf', '_snprintf', '_sntprintf _vsnprintf', '_vsnprintf', '_vsnwprintf', '_vsntprintf', '_wvnsprintf', '_wvnsprintfA', '_wvnsprintfW', '_snwprintf', '_snprintf', '_sntprintf', '_nsprintf', '_wvsprintf', '_wvsprintfA', '_wvsprintfW', '_vsprintf', '_vstprintf', '_vswprintf', '_vsnprintf', '_vsnwprintf', '_vsntprintf', '_wvnsprintf', '_wvnsprintfA', '_wvnsprintfW', '_strncpy', '_wcsncpy', '_tcsncpy', '_mbsncpy', '_mbsnbcpy', '_StrCpyN', '_StrCpyNA', '_StrCpyNW', '_StrNCpy', '_strcpynA', '_StrNCpyA', '_StrNCpyW', '_lstrcpyn', '_lstrcpynA', '_lstrcpynW', '_fstrncpy', '_strncat', '_wcsncat', '_tcsncat', '_mbsncat', '_mbsnbcat', '_StrCatN', '_StrCatNA', '_StrCatNW', '_StrNCat', '_StrNCatA', '_StrNCatW', '_lstrncat', '_lstrcatnA', '_lstrcatnW', '_lstrcatn', '_fstrncat', '_strtok', '_tcstok', '_wcstok', '_mbstok', '_makepath', '_tmakepath', '_makepath', '_wmakepath', '_splitpath', '_tsplitpath', '_wsplitpath', '_scanf', '_wscanf', '_tscanf', '_sscanf', '_swscanf', '_stscanf', '_snscanf', '_snwscanf', '_sntscanf', '_itoa', '_itow', '_i64toa', '_i64tow', '_ui64toa', '_ui64tot', '_ui64tow', '_ultoa', '_ultot', '_ultow', '_CharToOem', '_CharToOemA', '_CharToOemW', '_OemToChar', '_OemToCharA', '_OemToCharW', '_CharToOemBuffA', '_CharToOemBuffW', '_IsBadWritePtr', '_IsBadHugeWritePtr', '_IsBadReadPtr', '_IsBadHugeReadPtr', '_IsBadCodePtr', '_IsBadStringPtr', '_gets', '_getts', '_gettws', '_CharToOem', '_CharToOemA', '_CharToOemW', '_OemToChar', '_OemToCharA', '_OemToCharW', '_CharToOemBuffA', '_CharToOemBuffW', '_alloca', '_alloca', '_ strlen', '_wcslen', '_mbslen', '_mbstrlen', '_StrLen', '_lstrlen', '_RtlCopyMemory', '_CopyMemory', '_wmemcpy', '_ChangeWindowMessageFilter']
 jmps_x86 = ['jo', 'jno', 'js', 'jns', 'je', 'jz', 'jne', 'jnz','jb', 'jnae', 'jc', 'jnb', 'jae', 'jnc', 'jbe', 'jna', 'ja', 'jnbe', 'jl', 'jnge', 'jge', 'jnl', 'jle', 'jng', 'jg', 'jnle', 'jp', 'jpe', 'jnp', 'jpo', 'jcxz', 'jecxz']
 
@@ -36,21 +36,24 @@ for func in idautils.Functions():
 		elif m in jmps_x86:
 			jmp_count += 1
 	if jmp_count > 0 and int_count > 0:
+		print "?"
 		complex = ((jmp_count + int_count) / float(line_count)) * 100
 		targets.append((func,idc.GetFunctionName(func), line_count, jmp_count,int_count,complex))
 
 targets = sorted(targets, key=lambda targets: targets[5],reverse=True)
+if len(targets) == 0:
+	print "Nothing obviously of interest."
+else:
+	min = targets[0][5]
+	max = targets[len(targets) - 1][5]
 
-min = targets[0][5]
-max = targets[len(targets) - 1][5]
-
-print("--- Ran in: %s seconds ---" % (time.time() - start_time))
-print "------------------------------------------------------------------------------"
-print "| Addr   | Name     | Line Count | JMP Count | Interesting Calls | Jmp/Int % |"
-print "------------------------------------------------------------------------------"
-for i in targets:
-	print "|%8x|%10s|%12s|%11s|%19s|%11.2f|" % i
-	start_ea = idaapi.get_func(i[0]).startEA
-	color = pseudocolor(i[5],min,max)
-	idc.SetColor(start_ea, idc.CIC_FUNC, color)
-print "------------------------------------------------------------------------------"
+	print("--- Ran in: %s seconds ---" % (time.time() - start_time))
+	print "------------------------------------------------------------------------------"
+	print "| Addr   | Name     | Line Count | JMP Count | Interesting Calls | Jmp/Int % |"
+	print "------------------------------------------------------------------------------"
+	for i in targets:
+		print "|%8x|%10s|%12s|%11s|%19s|%11.2f|" % i
+		start_ea = idaapi.get_func(i[0]).startEA
+		color = pseudocolor(i[5],min,max)
+		idc.SetColor(start_ea, idc.CIC_FUNC, color)
+	print "------------------------------------------------------------------------------"
