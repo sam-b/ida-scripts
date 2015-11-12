@@ -3,7 +3,7 @@ Dumping ground for whatever IDA Pro scripts I write.
 
 ##most_refs.py
 Prints a lot of the ten functions which are called by other functions the most.
-![Screenshot](images/most_refs.PNG?raw=true)
+![Screenshot](images/ref_count_list.PNG?raw=true)
 ##mem_complexity.py
 Highlights functions which include a lot of control flow and calls to functions that are on Microsofts banned list (https://msdn.microsoft.com/en-us/library/bb288454.aspx),
 this is just designed a very rough way of highlighting interesting functions - colors go Red to Blue for least to most interesting.
