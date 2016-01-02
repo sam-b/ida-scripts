@@ -12,3 +12,6 @@ this is designed as a very rough way of highlighting interesting functions - col
 Renders a .png from a dot graph of the Control Flow Graph of a binary - works by building a full graph of the binaries function calls and then walking the graph from the entry point,
 in order to find all reachable function calls. Requires pydot and Grapviz to be installed.
 ![Screenshot](images/call_graph.png?raw=true)
+##export2neo4j.py
+Exports a binaries function graph to a neo4j instance. 
+Note: super alpha - slow and still missing a lot of data I want, debating what to do with indirect calls etc.
