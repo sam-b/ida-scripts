@@ -14,19 +14,22 @@ try:
 except:
 	pass
 	
-def upload(self,ctx):
-	target = idaapi.get_root_filename()
-	for f in Functions():
-		callee_name = GetFunctionName(f)
-		callee = self.neo.merge_one("Function","name",callee_name)
+target = idaapi.get_root_filename()
+for f in Functions():
+	callee_name = GetFunctionName(f)
+	callee = neo.merge_one("Function","name",callee_name)
+	if target not in callee.labels:
 		callee.labels.add(target)
-		for xref in XrefsTo(f):
-			caller_name = GetFunctionName(xref.frm)
-			if caller_name == '':
-				print "Indirect call to " + callee_name + " ignored."
-				continue
-			caller = self.neo.merge_one("Function","name",caller_name)
-			caller.labels.add(target)
-			caller_callee = Relationship(caller, "CALLS", callee)
-			neo.create(caller_callee)
+		callee.push()
+	for xref in XrefsTo(f):
+		caller_name = GetFunctionName(xref.frm)
+		if caller_name == '':
+			print "Indirect call to " + callee_name + " ignored."
+			continue
+		caller = neo.merge_one("Function","name",caller_name)
+		if target not in callee.labels:
+			callee.labels.add(target)
+			callee.push()
+		caller_callee = Relationship(caller, "CALLS", callee)
+		neo.get_or_create(caller_callee)
 print "Export finished"
