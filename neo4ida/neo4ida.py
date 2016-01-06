@@ -236,17 +236,12 @@ class neo4ida_t(idaapi.plugin_t):
 			callee = self.neo.merge_one("Function","start",f)
 			callee.properties["name"] = callee_name
 			tmp = get_flags(f)
-			#type = parse_function_type(f)
-			#args = parse_function_args(f)
 			for i in tmp:
 				callee.labels.add(i)
 			callee.labels.add(target)
 			callee.push()
 			for xref in XrefsTo(f):
 				caller_name = GetFunctionName(xref.frm)
-				if caller_name == '':
-					#print "Indirect call to " + callee_name + " ignored."
-					continue
 				caller = self.neo.merge_one("Function","start",xref.frm)
 				caller.properties["name"] = caller_name
 				tmp = get_flags(f)
