@@ -96,6 +96,9 @@ class CypherQueryForm(Form):
 	
 	def form_change(self,fid):
 		print fid
+		if fid == self.query.id:
+			query = self.GetControlValue(self.query)
+			self.query.value = query
 		if fid == -2:
 			self.Close(-1)
 	
@@ -190,6 +193,15 @@ class neo4ida_t(idaapi.plugin_t):
 		)
 		if not action.registerAction():
 			return 1
+		action = UiAction(
+			id="neo4ida:browser",
+			name="Neo4j Browser",
+			tooltip="Open Neo4j browser.",
+			menuPath="Edit/neo4ida/",
+			callback=self.open_browser,
+		)
+		if not action.registerAction():
+			return 1
 		return idaapi.PLUGIN_KEEP
 
 		
@@ -208,6 +220,9 @@ class neo4ida_t(idaapi.plugin_t):
 		for i in self.neo.find("Function"):
 			print i
 	
+	def open_browser(self,ctx):
+		self.neo.open_browser()
+	
 	def config_form(self,ctx):
 		ConnectionManagementForm(self)
 	
@@ -218,8 +233,11 @@ class neo4ida_t(idaapi.plugin_t):
 		target = idaapi.get_root_filename()
 		for f in Functions():
 			callee_name = GetFunctionName(f)
-			callee = self.neo.merge_one("Function","name",callee_name)
+			callee = self.neo.merge_one("Function","start",f)
+			callee.properties["name"] = callee_name
 			tmp = get_flags(f)
+			#type = parse_function_type(f)
+			#args = parse_function_args(f)
 			for i in tmp:
 				callee.labels.add(i)
 			callee.labels.add(target)
@@ -227,9 +245,10 @@ class neo4ida_t(idaapi.plugin_t):
 			for xref in XrefsTo(f):
 				caller_name = GetFunctionName(xref.frm)
 				if caller_name == '':
-					print "Indirect call to " + callee_name + " ignored."
+					#print "Indirect call to " + callee_name + " ignored."
 					continue
-				caller = self.neo.merge_one("Function","name",caller_name)
+				caller = self.neo.merge_one("Function","start",xref.frm)
+				caller.properties["name"] = caller_name
 				tmp = get_flags(f)
 				for i in tmp:
 					caller.labels.add(i)
