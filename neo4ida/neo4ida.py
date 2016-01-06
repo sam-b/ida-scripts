@@ -1,5 +1,6 @@
 import json
 import os
+import time
 
 import idc
 import idautils
@@ -167,11 +168,11 @@ class neo4ida_t(idaapi.plugin_t):
 		if not action.registerAction():
 			return 1
 		action = UiAction(
-			id="neo4ida:find",
-			name="Find",
-			tooltip="Find",
+			id="neo4ida:dropdb",
+			name="Drop Database",
+			tooltip="Delete all entries in database instance.",
 			menuPath="Edit/neo4ida/",
-			callback=self.find,
+			callback=self.drop_db,
 		)
 		if not action.registerAction():
 			return 1
@@ -216,9 +217,8 @@ class neo4ida_t(idaapi.plugin_t):
 	def term(self):
 		return None
 
-	def find(self,ctx):
-		for i in self.neo.find("Function"):
-			print i
+	def drop_db(self,ctx):
+		self.neo.cypher.execute("START n=node(*) detach delete n;")
 	
 	def open_browser(self,ctx):
 		self.neo.open_browser()
@@ -230,27 +230,34 @@ class neo4ida_t(idaapi.plugin_t):
 		CypherQueryForm(self)
 	
 	def upload(self,ctx):
+		start = time.time()
+		func_count = 0
+		bb_count = 0
 		target = idaapi.get_root_filename()
 		for f in Functions():
 			callee_name = GetFunctionName(f)
-			callee = self.neo.merge_one("Function","start",f)
-			callee.properties["name"] = callee_name
-			tmp = get_flags(f)
-			for i in tmp:
-				callee.labels.add(i)
-			callee.labels.add(target)
-			callee.push()
-			for xref in XrefsTo(f):
-				caller_name = GetFunctionName(xref.frm)
-				caller = self.neo.merge_one("Function","start",xref.frm)
-				caller.properties["name"] = caller_name
-				tmp = get_flags(f)
-				for i in tmp:
-					caller.labels.add(i)
-				caller.labels.add(target)
-				caller_callee = Relationship(caller, "CALLS", callee)
-				self.neo.create_unique(caller_callee)
-
+			flags = get_flags(f)
+			callee = Node("Function",target,start=f,name=callee_name,flags=flags)
+			self.neo.create(callee)
+			func_count += 1
+			fc = idaapi.FlowChart(idaapi.get_func(f))
+			for block in fc:
+				bb = Node("BasicBlock",target,start=block.startEA,end=block.endEA)
+				self.neo.create(bb)
+				bb_count += 1
+				link = Relationship(callee, "CONTAINS", bb)
+				self.neo.create(link)
+		for f in Functions():
+			callee = self.neo.find_one("Function","start",f)
+			for xref in CodeRefsTo(f,0):
+				caller_name = GetFunctionName(xref)
+				if caller_name != '':
+					caller = self.neo.find_one("Function","name",caller_name)
+					caller_callee = Relationship(caller, "CALLS", callee)
+					self.neo.create_unique(caller_callee)
+		print "Upload ran in: " + str(time.time() - start)
+		print "Uploaded " + str(func_count) + " functions and " + str(bb_count) + " basic blocks."
+	
 	def run(self):
 		pass
 	
@@ -277,6 +284,9 @@ class neo4ida_t(idaapi.plugin_t):
 				return json.loads(f.read())
 		except:
 			return None
+
+	def find_path(self,startFunc, endFunc):
+		print "Finding all paths from " + startFunc + " to " + endFunc
 	
 def help():
 	print "Upload: upload graph to neo instance."
