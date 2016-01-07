@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import hashlib
 
 import idc
 import idautils
@@ -128,6 +129,8 @@ class UiAction(idaapi.action_handler_t):
             return False
         if not idaapi.attach_action_to_menu(self.menuPath, self.id, 0):
             return False
+        if not idaapi.attach_action_to_toolbar("AnalysisToolBar", self.id):
+            return False
         return True
 
     def unregisterAction(self):
@@ -203,6 +206,15 @@ class neo4ida_t(idaapi.plugin_t):
 		)
 		if not action.registerAction():
 			return 1
+		action = UiAction(
+			id="neo4ida:diff",
+			name="Binary Diff",
+			tooltip="Open binary diffing interface.",
+			menuPath="Edit/neo4ida/",
+			callback=self.binary_diff,
+		)
+		if not action.registerAction():
+			return 1
 		return idaapi.PLUGIN_KEEP
 
 		
@@ -217,8 +229,12 @@ class neo4ida_t(idaapi.plugin_t):
 	def term(self):
 		return None
 
+	def binary_diff(self,ctf):
+		print "Open binary diffing interface"
+
 	def drop_db(self,ctx):
 		self.neo.cypher.execute("START n=node(*) detach delete n;")
+		print "All database nodes and relationships deleted."
 	
 	def open_browser(self,ctx):
 		self.neo.open_browser()
@@ -233,30 +249,59 @@ class neo4ida_t(idaapi.plugin_t):
 		start = time.time()
 		func_count = 0
 		bb_count = 0
+		call_count = 0
 		target = idaapi.get_root_filename()
+		hash = idc.GetInputMD5()
+		tx = self.neo.cypher.begin()
+		insert_binary = "MERGE (n:Binary {name:{N},hash:{H}}) RETURN n"
+		insert_func = "MERGE (n:Function {name:{N},start:{S},flags:{F}}) RETURN n"
+		create_relationship = "MATCH (u:Function {name:{N}}), (r:Function {name:{M}}) CREATE (u)-[:CALLS]->(r)"
+		create_contains = "MATCH (u:BasicBlock {start:{S}}), (f:Function {name:{N}}) CREATE (f)-[:CONTAINS]->(u)"
+		self.neo.cypher.execute(insert_binary, {"N":target, "H":hash})
+		self.neo.cypher.execute("CREATE INDEX ON :Function(start)")
 		for f in Functions():
 			callee_name = GetFunctionName(f)
 			flags = get_flags(f)
-			callee = Node("Function",target,start=f,name=callee_name,flags=flags)
-			self.neo.create(callee)
+			tx.append(insert_func, {"N": callee_name, "S":f, "F":flags})
+			#callee = Node("Function",target,start=f,name=callee_name,flags=flags)
+			#type = GetType(f)
+			#args = get_args(f)
+			#if not type:
+			#	print args
+			#if args:
+			#	callee.properties['args'] = args
+			#self.neo.create(callee)
 			func_count += 1
+		tx.process()
+		tx.commit()
+		#tx = self.neo.cypher.begin()
+		for f in Functions():
+			callee = self.neo.find_one("Function","start",f)
 			fc = idaapi.FlowChart(idaapi.get_func(f))
 			for block in fc:
-				bb = Node("BasicBlock",target,start=block.startEA,end=block.endEA)
+				bb = Node("BasicBlock",start=block.startEA,end=block.endEA)
 				self.neo.create(bb)
 				bb_count += 1
 				link = Relationship(callee, "CONTAINS", bb)
-				self.neo.create(link)
+				self.neo.create_unique(link)
+			#tx.process()
+		#tx.commit()
+		tx = self.neo.cypher.begin()
 		for f in Functions():
 			callee = self.neo.find_one("Function","start",f)
+			callee_name = callee.properties['name']
 			for xref in CodeRefsTo(f,0):
 				caller_name = GetFunctionName(xref)
 				if caller_name != '':
-					caller = self.neo.find_one("Function","name",caller_name)
-					caller_callee = Relationship(caller, "CALLS", callee)
-					self.neo.create_unique(caller_callee)
+					tx.append(create_relationship,{"N":caller_name,"M":callee_name})
+					call_count += 1
+					#caller = self.neo.find_one("Function","name",caller_name)
+					#caller_callee = Relationship(caller, "CALLS", callee)
+					#self.neo.create_unique(caller_callee)
+		tx.process()
+		tx.commit()
 		print "Upload ran in: " + str(time.time() - start)
-		print "Uploaded " + str(func_count) + " functions and " + str(bb_count) + " basic blocks."
+		print "Uploaded " + str(func_count) + " functions, " + str(call_count) +" function calls and " + str(bb_count) + " basic blocks."
 	
 	def run(self):
 		pass
@@ -286,10 +331,47 @@ class neo4ida_t(idaapi.plugin_t):
 			return None
 
 	def find_path(self,startFunc, endFunc):
+		all_paths = ""
 		print "Finding all paths from " + startFunc + " to " + endFunc
+		self.neo.cypher.execute(all_paths,{})
 	
 def help():
 	print "Upload: upload graph to neo instance."
+
+def get_args(f):
+  local_variables = [ ]
+  arguments = [ ]
+  current = local_variables
+
+  frame = idc.GetFrame(f)
+  arg_string = ""
+  if frame == None:
+    return None
+        
+  start = idc.GetFirstMember(frame)
+  end = idc.GetLastMember(frame)
+  count = 0
+  max_count = 10000
+  args_str = ""     
+  while start <= end and count <= max_count:
+    size = idc.GetMemberSize(frame, start)
+    count = count + 1
+    if size == None:
+      start = start + 1
+      continue
+
+    name = idc.GetMemberName(frame, start)  
+    start += size
+            
+    if name in [" r", " s"]:
+      # Skip return address and base pointer
+      current = arguments
+      continue
+    arg_string += " " + name
+    current.append(name)
+  if len(arguments) == 0:
+    arguments.append("void")
+  return arguments	
 
 def get_flags(f):
 	out = []
