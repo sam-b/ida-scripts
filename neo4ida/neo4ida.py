@@ -2,6 +2,7 @@ import json
 import os
 import time
 import hashlib
+import inspect
 
 import idc
 import idautils
@@ -41,27 +42,22 @@ class ConnectionManagementForm(Form):
 	
 	def form_change(self,fid):
 		if fid == self.host.id:
-			print "Hostname changed."
 			tmp = self.GetControlValue(self.host)
 			self.host.value = tmp
 			self.changed = True
 		if fid == self.port.id:
-			print "Port changed"
 			tmp = self.GetControlValue(self.port)
 			self.port.value = tmp
 			self.changed = True
 		if fid == self.username.id:
-			print "Username changed"
 			tmp = self.GetControlValue(self.username)
 			self.username.value = tmp
 			self.changed = True
 		if fid == self.password.id:
-			print "Password changed"
 			tmp = self.GetControlValue(self.password)
 			self.password.value = tmp
 			self.changed = True
 		if fid == -2:
-			print "OK button pressed"
 			if self.changed:
 				new_conf = {}
 				new_conf['host'] = self.host.value
@@ -97,7 +93,6 @@ class CypherQueryForm(Form):
 		self.Execute()
 	
 	def form_change(self,fid):
-		print fid
 		if fid == self.query.id:
 			query = self.GetControlValue(self.query)
 			self.query.value = query
@@ -110,20 +105,26 @@ class CypherQueryForm(Form):
 			print i
 			
 class UiAction(idaapi.action_handler_t):
-    def __init__(self, id, name, tooltip, menuPath, callback):
+    def __init__(self, id, name, tooltip, menuPath, callback, icon):
         idaapi.action_handler_t.__init__(self)
         self.id = id
         self.name = name
         self.tooltip = tooltip
         self.menuPath = menuPath
         self.callback = callback
+        scriptPath = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+        self.icon = idaapi.load_custom_icon(
+            scriptPath + "/" + "icon" + ".png"
+        )
 
     def registerAction(self):
         action_desc = idaapi.action_desc_t(
         self.id,
         self.name,
         self,
+		"",
         self.tooltip,
+		self.icon
 		)      
         if not idaapi.register_action(action_desc):
             return False
@@ -157,16 +158,13 @@ class neo4ida_t(idaapi.plugin_t):
 		if not config:
 			config = self.create_default_config()
 		self.connect()
-		try:
-			self.neo.schema.create_uniqueness_constraint("Function", "name")
-		except:
-			pass
 		action = UiAction(
 			id="neo4ida:upload",
 			name="Upload",
 			tooltip="Upload to neo4j",
 			menuPath="Edit/neo4ida/",
 			callback=self.upload,
+			icon=""
 		)
 		if not action.registerAction():
 			return 1
@@ -176,6 +174,7 @@ class neo4ida_t(idaapi.plugin_t):
 			tooltip="Delete all entries in database instance.",
 			menuPath="Edit/neo4ida/",
 			callback=self.drop_db,
+			icon=""
 		)
 		if not action.registerAction():
 			return 1
@@ -185,6 +184,7 @@ class neo4ida_t(idaapi.plugin_t):
 			tooltip="Configure neo4j connection details.",
 			menuPath="Edit/neo4ida/",
 			callback=self.config_form,
+			icon=""
 		)
 		if not action.registerAction():
 			return 1
@@ -194,6 +194,7 @@ class neo4ida_t(idaapi.plugin_t):
 			tooltip="Execute a Cypher query.",
 			menuPath="Edit/neo4ida/",
 			callback=self.query_form,
+			icon=""
 		)
 		if not action.registerAction():
 			return 1
@@ -203,6 +204,7 @@ class neo4ida_t(idaapi.plugin_t):
 			tooltip="Open Neo4j browser.",
 			menuPath="Edit/neo4ida/",
 			callback=self.open_browser,
+			icon=""
 		)
 		if not action.registerAction():
 			return 1
@@ -212,6 +214,7 @@ class neo4ida_t(idaapi.plugin_t):
 			tooltip="Open binary diffing interface.",
 			menuPath="Edit/neo4ida/",
 			callback=self.binary_diff,
+			icon=""
 		)
 		if not action.registerAction():
 			return 1
@@ -255,49 +258,44 @@ class neo4ida_t(idaapi.plugin_t):
 		tx = self.neo.cypher.begin()
 		insert_binary = "MERGE (n:Binary {name:{N},hash:{H}}) RETURN n"
 		insert_func = "MERGE (n:Function {name:{N},start:{S},flags:{F}}) RETURN n"
-		create_relationship = "MATCH (u:Function {name:{N}}), (r:Function {name:{M}}) CREATE (u)-[:CALLS]->(r)"
+		insert_bb = "MERGE (n:BasicBlock {start:{S}, end:{E}}) RETURN n"
+		create_relationship = "MATCH (u:Function {name:{N}}), (r:Function {start:{S}}) CREATE (u)-[:CALLS]->(r)"
 		create_contains = "MATCH (u:BasicBlock {start:{S}}), (f:Function {name:{N}}) CREATE (f)-[:CONTAINS]->(u)"
+		create_inside = "MATCH (u:Function {start:{S}}), (b:Binary {hash:{H}}) CREATE (f)-[:INSIDE]->(b)"
 		self.neo.cypher.execute(insert_binary, {"N":target, "H":hash})
 		self.neo.cypher.execute("CREATE INDEX ON :Function(start)")
+		#self.neo.cypher.execute("CREATE INDEX ON :Function(name)")
+		self.neo.cypher.execute("CREATE INDEX ON :BasicBlock(start)")
 		for f in Functions():
+			tx.append(create_inside, {"S":f, "H":hash})
 			callee_name = GetFunctionName(f)
 			flags = get_flags(f)
+			type = GetType(f)
+			if type:
+				return_type = type.split()[0]
+				print type
+				end_return = type.find(' ')
+				start_args = type.find('(')
+				print type[end_return +1:start_args]
+				print type[start_args+1:].split(',')
+			else:
+				print GuessType(f)
 			tx.append(insert_func, {"N": callee_name, "S":f, "F":flags})
-			#callee = Node("Function",target,start=f,name=callee_name,flags=flags)
-			#type = GetType(f)
-			#args = get_args(f)
-			#if not type:
-			#	print args
-			#if args:
-			#	callee.properties['args'] = args
-			#self.neo.create(callee)
 			func_count += 1
-		tx.process()
-		tx.commit()
-		#tx = self.neo.cypher.begin()
-		for f in Functions():
-			callee = self.neo.find_one("Function","start",f)
 			fc = idaapi.FlowChart(idaapi.get_func(f))
 			for block in fc:
-				bb = Node("BasicBlock",start=block.startEA,end=block.endEA)
-				self.neo.create(bb)
+				tx.append(insert_bb, {"S":block.startEA,"E":block.endEA})
+				tx.append(create_contains,{"S":block.startEA,"N":f})
 				bb_count += 1
-				link = Relationship(callee, "CONTAINS", bb)
-				self.neo.create_unique(link)
-			#tx.process()
-		#tx.commit()
+		tx.process()
+		tx.commit()
 		tx = self.neo.cypher.begin()
 		for f in Functions():
-			callee = self.neo.find_one("Function","start",f)
-			callee_name = callee.properties['name']
 			for xref in CodeRefsTo(f,0):
 				caller_name = GetFunctionName(xref)
 				if caller_name != '':
-					tx.append(create_relationship,{"N":caller_name,"M":callee_name})
+					tx.append(create_relationship,{"N":caller_name,"S":f})
 					call_count += 1
-					#caller = self.neo.find_one("Function","name",caller_name)
-					#caller_callee = Relationship(caller, "CALLS", callee)
-					#self.neo.create_unique(caller_callee)
 		tx.process()
 		tx.commit()
 		print "Upload ran in: " + str(time.time() - start)
@@ -307,7 +305,8 @@ class neo4ida_t(idaapi.plugin_t):
 		pass
 	
 	def update_config(self,new_config):
-		print "updating config to be " + json.dumps(new_config)
+		print "updating config to be: "
+		print json.dumps(new_config)
 		os.remove(self.conf_file)
 		with open(self.conf_file,"w+") as f:
 			f.write(json.dumps(new_config))
@@ -336,7 +335,12 @@ class neo4ida_t(idaapi.plugin_t):
 		self.neo.cypher.execute(all_paths,{})
 	
 def help():
-	print "Upload: upload graph to neo instance."
+	print "Upload: Upload graph to neo instance."
+	print "Drop Database: Delete all nodes and relationships in the neo4j instance."
+	print "Configure: Update your connection configuration to the neo4j instance."
+	print "Cypher Query: Execute arbitary cypher queries."
+	print "Neo4j Browser: Open the Neo4j web interface in your systems default browser."
+	print "Binary Diff: placeholer menu item."
 
 def get_args(f):
   local_variables = [ ]
